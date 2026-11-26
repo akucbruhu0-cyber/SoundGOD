@@ -22,6 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 UV = shutil.which("uv") or "uv"
 TEXT = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace"}
+sys.stdout.reconfigure(encoding="utf-8")  # prints Hebrew file names; a Windows console is cp1252
 full = "--full" in sys.argv
 args = [a for a in sys.argv[1:] if a != "--full"]
 
