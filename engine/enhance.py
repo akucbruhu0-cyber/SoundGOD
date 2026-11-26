@@ -21,6 +21,7 @@ import argparse
 import json
 import math
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -36,11 +37,17 @@ ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "bin" / "noise-reduction"
 BUNDLED = ROOT / "models" / "nemotron-re-use"  # weights shipped with the project (OpenMDW-1.1, see models/*/LICENSE)
 WEIGHTS = Path.home() / "Library/Application Support/EfficientNoiseReduction/NVIDIA-NemotronLabs-RE-USE"  # CLI's own cache
+TORCH_CLEAN = ROOT / "engine" / "nemotron.py"  # the same model in PyTorch on the CPU: Windows, Intel Macs, Linux
 SIDON = ROOT / "engine" / "sidon.py"  # engine 3: generative restoration (own uv environment with torch)
 SIDON_DIR = ROOT / "models" / "sidon"
 UV = shutil.which("uv") or "/opt/homebrew/bin/uv"
 SUFFIX = " - מוגבר ב-AI"
 SR = 48000  # internal mixing/polish rate
+# clean engine runtime: the MLX tool on Apple silicon, the PyTorch port everywhere else (SOUNDGOD_ENGINE=torch forces it)
+# ask the hardware, not this Python: uv may pick an Intel Python that runs under Rosetta and reports x86_64
+APPLE_SILICON = sys.platform == "darwin" and (platform.machine() == "arm64" or subprocess.run(
+    ["sysctl", "-n", "hw.optional.arm64"], capture_output=True, text=True).stdout.strip() == "1")
+BACKEND = os.environ.get("SOUNDGOD_ENGINE") or ("mlx" if APPLE_SILICON else "torch")
 
 # name -> (default, min, max, type). The web UI reads this via --describe.
 PARAMS = {
@@ -62,8 +69,14 @@ PARAMS = {
 
 # Measured on an M3 Pro (33 s clip, 2 s chunks). The UI shows its time estimate from these numbers.
 # rtf = processing seconds per second of audio, by the rate the model produces output at.
+RTF = {
+    "mlx": {"16000": 0.205, "32000": 0.42, "48000": 0.56},
+    # PyTorch port on the CPU, measured on the same M3 Pro's CPU (hop 1.0 gave 2.14 / 7.21, doubled to hop 0.5; 32 kHz interpolated).
+    # A Windows PC or an Intel Mac will differ, often slower: the UI calls these estimates.
+    "torch": {"16000": 4.3, "32000": 9.4, "48000": 14.5},
+}
 SPEED = {
-    "rtf": {"16000": 0.205, "32000": 0.42, "48000": 0.56},
+    "rtf": RTF.get(BACKEND, RTF["torch"]),
     "hop_ref": 0.5,  # rtf above is at hop 0.5; time scales as 0.5/hop (measured: hop 0.75 -> x0.66, hop 1.0 -> x0.48)
     "chunk_extra": 0.38,  # a 0.5 s chunk costs ~38 % more than a 2 s chunk; above 2 s no further saving
     "ffmpeg_per_min": 3.0,  # extract, resample, loudness (two passes), encode: seconds per audio minute (5 min file: 15.7 s without the model)
@@ -104,7 +117,7 @@ def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
     env = {**os.environ, "LLVM_PROFILE_FILE": os.devnull}
     if (BUNDLED / "model.safetensors").exists():
         env["NEMOTRON_MODEL_DIR"] = str(BUNDLED)  # the CLI looks here before its own cache
-    p = subprocess.run([str(c) for c in cmd], capture_output=True, text=True, env=env)
+    p = subprocess.run([str(c) for c in cmd], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     if check and p.returncode != 0:
         raise RuntimeError(f"{Path(str(cmd[0])).name} failed: {p.stderr.strip()[-600:]}")
     return p
@@ -205,6 +218,10 @@ def loudnorm_two_pass(src: Path, dst: Path, target: float, pre: str = "") -> Non
 
 
 def ensure_model() -> None:
+    if BACKEND != "mlx":
+        if not (BUNDLED / "model.safetensors").exists():
+            raise RuntimeError(f"missing {BUNDLED / 'model.safetensors'} — download the release zip again")
+        return
     if not CLI.exists():
         raise RuntimeError(f"missing {CLI} — see README (setup)")
     if (BUNDLED / "model.safetensors").exists() or WEIGHTS.exists():
@@ -213,11 +230,18 @@ def ensure_model() -> None:
 
 
 def clean(dry_in: Path, out: Path, model_rate: int, out_rate: int, chunk: float, hop: float = 0.5) -> float:
-    """Nemotron RE-USE via the MLX CLI. Returns real-time factor."""
+    """Nemotron RE-USE via the MLX CLI (Apple silicon) or the PyTorch port. Returns real-time factor."""
     ensure_model()
-    cmd = [CLI, "enhance", dry_in, out, "--engine", "nemotron", "--latency", chunk, "--hop", hop]
-    if out_rate != model_rate:
-        cmd += ["--output-rate", out_rate]  # bandwidth extension
+    if BACKEND != "mlx":
+        if out_rate != model_rate:  # bandwidth extension: the port runs at the file's rate, so upsample first (as NVIDIA's --BWE)
+            up = out.with_name("bwe_in.wav")
+            resample(dry_in, up, out_rate)
+            dry_in = up
+        cmd = [UV, "run", "--script", TORCH_CLEAN, dry_in, out, "--chunk", chunk, "--hop", hop]
+    else:
+        cmd = [CLI, "enhance", dry_in, out, "--engine", "nemotron", "--latency", chunk, "--hop", hop]
+        if out_rate != model_rate:
+            cmd += ["--output-rate", out_rate]  # bandwidth extension
     p = run(cmd)
     m = re.search(r"RTF ([\d.]+)", p.stdout + p.stderr)
     return float(m.group(1)) if m else float("nan")
@@ -379,7 +403,7 @@ def main() -> int:
     a = ap.parse_args()
 
     if a.describe:
-        print(json.dumps({"sidon_ready": sidon_ready(), "speed": SPEED, "presets": PRESETS, "params": {k: {"default": v[0], "min": v[1], "max": v[2]} for k, v in PARAMS.items()}}))
+        print(json.dumps({"sidon_ready": sidon_ready(), "backend": BACKEND, "speed": SPEED, "presets": PRESETS, "params": {k: {"default": v[0], "min": v[1], "max": v[2]} for k, v in PARAMS.items()}}))
         return 0
     if not a.input:
         ap.error("input is required")
@@ -439,6 +463,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")  # JSON with Hebrew paths; Windows consoles default to a legacy code page
     try:
         sys.exit(main())
     except RuntimeError as e:

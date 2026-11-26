@@ -2,12 +2,13 @@
 
 <p align="center"><img src="assets/logo.jpg" alt="SoundGOD" width="180"></p>
 
-Local speech cleanup for very bad recordings (a far-away lecturer, echoey rooms, noise) and a "studio microphone" polish for your own videos. Everything runs on your Mac. Nothing is uploaded.
+Local speech cleanup for very bad recordings (a far-away lecturer, echoey rooms, noise) and a "studio microphone" polish for your own videos. Everything runs on your computer (Mac or Windows). Nothing is uploaded.
 
 `README.he.md` has a Hebrew version. The web UI itself is in Hebrew (RTL).
 
 ```
-Engine 1  CLEAN   NVIDIA Nemotron RE-USE (MLX / Metal)   removes noise and reverb, does not invent words
+Engine 1  CLEAN   NVIDIA Nemotron RE-USE                 removes noise and reverb, does not invent words
+                  (MLX/GPU on Apple silicon, PyTorch/CPU on Windows and Intel Macs)
 Engine 2  GEN     Sidon (PyTorch, CPU)                    generative restoration: full-band, studio-like voice
 Engine 3  POLISH  ffmpeg                                  gate, warmth, presence, compression, final loudness
 (each engine can be switched off; `studio` uses GEN, `rescue` and `natural` use CLEAN)
@@ -25,12 +26,25 @@ Nemotron RE-USE is **included** (`models/nemotron-re-use/`, 38 MB). The optional
 
 ## Requirements
 
-- Apple silicon Mac, macOS 14 or newer (the model runs on MLX/Metal; no Intel, Windows or Linux)
-- `ffmpeg` and `uv`: `brew install ffmpeg uv`
+| | Apple silicon Mac | Intel Mac | Windows 10/11 |
+|---|---|---|---|
+| zip to download | `SoundGOD-<version>-macos-arm64.zip` | `SoundGOD-<version>-windows-macos-intel.zip` | `SoundGOD-<version>-windows-macos-intel.zip` |
+| install once | `brew install ffmpeg uv` | `brew install ffmpeg uv` | `winget install Gyan.FFmpeg` and `winget install astral-sh.uv` |
+| start | `start.command` | `start.command` | `start.bat` |
+| clean engine runs on | MLX, on the GPU (fast) | PyTorch, on the CPU | PyTorch, on the CPU |
 
-## Quick start (release zip, nothing to build)
+The clean engine is the same NVIDIA model with the same weights everywhere. NVIDIA publishes it for Linux with an NVIDIA GPU only, so on Windows and Intel Macs it runs through `engine/nemotron.py`, a plain-PyTorch port of NVIDIA's reference code (output matches the Mac tool to about -55 dB). It is much slower: measured on an M3 Pro's CPU, about 2 minutes of processing per audio minute at 16 kHz (`rescue`) and about 7 at 48 kHz; a Windows PC will be in that range, an older laptop slower. The UI shows the estimate before you run. The first run on Windows or an Intel Mac downloads PyTorch (about 1 GB, once).
 
-1. Download `SoundGOD-<version>-macos-arm64.zip` from the Releases page and unzip it.
+## Quick start on Windows
+
+1. Install the two tools once, in a terminal (PowerShell): `winget install Gyan.FFmpeg` and `winget install astral-sh.uv`, then close the terminal.
+2. Download `SoundGOD-<version>-windows-macos-intel.zip` from the Releases page and unzip it (right-click → Extract All).
+3. Double-click `start.bat`. The first time it prepares the AI engine for a few minutes, then your browser opens the UI.
+   If Windows SmartScreen warns about the file: More info → Run anyway.
+
+## Quick start on a Mac (release zip, nothing to build)
+
+1. Download the zip for your Mac (see the table) from the Releases page and unzip it.
 2. macOS quarantines downloaded tools. Once, in Terminal: `xattr -dr com.apple.quarantine /path/to/SoundGOD-*`
    (or right-click `start.command` → Open).
 3. Double-click `start.command`. Your browser opens the UI.
@@ -39,14 +53,14 @@ Nemotron RE-USE is **included** (`models/nemotron-re-use/`, 38 MB). The optional
 
 ## From a git clone
 
-The repo contains the source and the model weights, but not the compiled tool (`bin/`, platform specific):
+The repo contains the source and the model weights, but not the compiled Apple-silicon tool (`bin/`). On Windows and Intel Macs nothing needs building: run `start.bat` / `start.command`. On Apple silicon:
 
 ```sh
 ./scripts/build-cli.sh      # clones + builds the MLX tool at a pinned commit; needs Xcode (~840 MB Metal Toolchain on first run)
 ./start.command
 ```
 
-`./scripts/package.sh` builds the release zip (bin + models + engine + UI + skill + licenses).
+`./scripts/package.sh` builds both release zips (on an Apple silicon Mac). `.github/workflows/check.yml` runs `engine/check.py --full` on Windows, an Intel Mac and Linux on every push.
 
 ## Time estimate and engines
 
@@ -64,7 +78,9 @@ Once a file is loaded the UI shows how long the full run will take with the curr
 
 ## Speed (M3 Pro)
 
-About 11 s of processing per minute of audio at 16 kHz, about 30 s per minute at 48 kHz.
+Apple silicon (MLX): about 11 s of processing per minute of audio at 16 kHz, about 30 s per minute at 48 kHz.
+Windows / Intel (PyTorch, CPU): about 2 min per audio minute at 16 kHz, about 7 min at 48 kHz on the same machine's CPU; your PC will differ.
+Sidon (`studio`) runs on the CPU everywhere: about 20 s per minute on the M3 Pro.
 
 ## What this does not do
 
@@ -74,14 +90,15 @@ About 11 s of processing per minute of audio at 16 kHz, about 30 s per minute at
 ## Layout
 
 ```
-engine/       enhance.py (the engine), check.py (smoke test)
+engine/       enhance.py (the engine), nemotron.py (PyTorch clean engine), sidon.py, check.py (smoke test)
 ui/           server.py (stdlib only) + static/ (vanilla JS/CSS)
 skill/        SKILL.md.tmpl, installed by scripts/install-skill.sh
 models/       NVIDIA Nemotron RE-USE weights + their license
-scripts/      build-cli.sh, package.sh, install-skill.sh
+scripts/      build-cli.sh, package.sh, install-skill.sh, make-app.sh
+start.command, start.bat   launchers (Mac, Windows)
 licenses/     upstream licenses     NOTICE.md  summary of third-party terms
 ```
 
 ## Credits and licenses
 
-Project code: MIT. Model: NVIDIA NemotronLabs RE-USE, OpenMDW-1.1. MLX tool: JacobLinCool/apple-efficient-noise-reduction (MIT). See `NOTICE.md`.
+Project code: MIT. Model and the reference code `engine/nemotron.py` is ported from: NVIDIA NemotronLabs RE-USE, OpenMDW-1.1. MLX tool: JacobLinCool/apple-efficient-noise-reduction (MIT). See `NOTICE.md`.

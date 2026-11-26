@@ -1,7 +1,12 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10,<3.13"
-# dependencies = ["torch", "torchaudio", "transformers", "numpy", "soundfile", "huggingface_hub"]
+# dependencies = [
+#   "torch", "torchaudio", "transformers", "numpy", "soundfile", "huggingface_hub",
+#   # Intel Macs stop at torch 2.2.2: it needs numpy 1.x, and newer transformers treat that torch as missing
+#   "numpy<2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+#   "transformers<4.50; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+# ]
 # ///
 """Sidon v0.1 generative speech restoration (sarulab-speech, MIT). Pipeline follows the authors' demo app.py.
 

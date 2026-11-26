@@ -1,10 +1,10 @@
 # AGENTS.md: architecture and change guide for SoundGOD
 
-Written for an AI coding agent (or a new human) who has never seen this project and has to modify it. Read this first, then the code. (The project's internal name, still used for the folder, cache directories and the page marker, is `audio-enhance`.) It describes the state of the project at version 0.1.1.
+Written for an AI coding agent (or a new human) who has never seen this project and has to modify it. Read this first, then the code. (The project's internal name, still used for the folder, cache directories and the page marker, is `audio-enhance`.) It describes the state of the project at version 0.2.0.
 
 ## 1. What it is
 
-SoundGOD is a **local speech-enhancement tool for macOS on Apple silicon**. It takes an audio or video file and writes a new file next to it with the sound improved: noise and room echo removed, quiet speech raised, optionally "rebuilt" in a full-band, studio-like voice. The original is never modified. For video the picture stream is copied untouched and only the sound is replaced.
+SoundGOD is a **local speech-enhancement tool for macOS (Apple silicon and Intel) and Windows**. It takes an audio or video file and writes a new file next to it with the sound improved: noise and room echo removed, quiet speech raised, optionally "rebuilt" in a full-band, studio-like voice. The original is never modified. For video the picture stream is copied untouched and only the sound is replaced.
 
 Nothing leaves the machine. There is no server component other than a loopback web server that serves the UI to the user's own browser.
 
@@ -16,14 +16,13 @@ One engine (`engine/enhance.py`) and three front ends on top of it:
 | Web UI | `ui/` | a local page: pick a file, tune parameters with explanations, hear a 15 s before/after, run and save |
 | Claude Code skill | `skill/SKILL.md.tmpl` | instructions for an LLM agent that drives the CLI; installed to `~/.claude/skills/studio-audio/` |
 
-Plus a macOS launcher app (`scripts/make-app.sh`) that starts the web server and opens the browser.
+Plus launchers that start the web server and open the browser: `start.command` (Mac), `start.bat` (Windows), and a macOS app (`scripts/make-app.sh`).
 
 Language: the UI and the user-facing docs are **Hebrew, right-to-left**. Code, comments, CLI help and this file are English. Keep it that way.
 
 **Non-goals** (decisions already made, do not reverse them without being asked):
 - Cloud processing, accounts, telemetry: none.
 - Generative models other than Sidon. A different generative restorer (Resemble Enhance) invented wrong words on a quiet, echoey Hebrew lecture. Sidon has only been checked on a clear Hebrew clip.
-- Windows or Linux support: the noise-removal model runs through MLX/Metal.
 - Touching the original file.
 
 ## 2. Mental model
@@ -37,7 +36,8 @@ input file (audio or video)
   ▼
 [pre-gain]   loudnorm single pass to -20 LUFS, at the model's sample rate (skipped when only "gen" is on)
   ▼
-[clean]      engine 1: Nemotron RE-USE via the Swift/MLX CLI in bin/ (removes noise and reverb)
+[clean]      engine 1: Nemotron RE-USE (removes noise and reverb): Swift/MLX CLI in bin/ on Apple silicon,
+  │          engine/nemotron.py (PyTorch, CPU) everywhere else
   │          output mixed with the dry signal by `wet` (0..100 %)  -> mixed.wav (48 kHz)
   ▼
 [gen]        engine 2: Sidon via engine/sidon.py in its own uv environment (PyTorch, CPU): full-band rebuild
@@ -54,7 +54,7 @@ Engines in one table:
 
 | engine | param | implementation | cost per audio minute (M3 Pro) | notes |
 |---|---|---|---|---|
-| clean | `clean` | `bin/noise-reduction enhance --engine nemotron ...` (compiled Swift, MLX on the GPU) | ~7 s at 16 kHz with `hop` 1.0, ~17 s at 48 kHz | weights bundled in `models/nemotron-re-use/` |
+| clean | `clean` | Apple silicon: `bin/noise-reduction enhance --engine nemotron ...` (compiled Swift, MLX on the GPU). Elsewhere: `engine/nemotron.py` (PyTorch + a numba scan, CPU) | MLX: ~7 s at 16 kHz with `hop` 1.0, ~17 s at 48 kHz. PyTorch: ~130 s at 16 kHz, ~430 s at 48 kHz (M3 Pro CPU) | weights bundled in `models/nemotron-re-use/`, shared by both runtimes |
 | gen | `gen` | `engine/sidon.py` (PyTorch TorchScript, **CPU only**) | ~20 s | ~1 GB weights downloaded on first use into `models/sidon/` |
 | polish | `polish` | ffmpeg filter chain in `polish_filters()` | ~0.3 s | off means only loudness is matched |
 
@@ -72,8 +72,9 @@ Chaining clean then gen was tried and gave no audible gain over gen alone on a c
 
 ```
 engine/enhance.py       446 lines  the engine: measuring, stages, CLI, JSON events, time model
+engine/nemotron.py      ~260 lines  engine 1 on Windows/Intel/Linux: PyTorch port of NVIDIA's reference code. Own uv environment
 engine/sidon.py          70 lines  engine 3 (generative): downloads weights, restores a wav. Own uv environment
-engine/check.py          32 lines  smoke test (10 s preview must hit the loudness target, peak ceiling, length)
+engine/check.py          ~80 lines smoke test (10 s preview: loudness target, peak ceiling, length); --full adds a full run on a Hebrew-named file and a server round trip
 ui/server.py            271 lines  stdlib http.server: static files, job runner, native file picker
 ui/index.html           160 lines  the page (Hebrew, dir="rtl"); a __TOKEN__ placeholder replaced per request
 ui/static/app.js        456 lines  all UI logic, vanilla JS, no build step
@@ -84,15 +85,17 @@ scripts/make-app.sh                builds "סטודיו סאונד.app" (default
 scripts/make-icon.py               crops assets/logo.jpg into the rounded app-icon .iconset (pillow, via uv)
 assets/logo.jpg                    the SoundGOD logo, 2000x2000: source of the app icon, shown in the READMEs
 scripts/build-cli.sh               clones and builds the MLX tool at a pinned commit into bin/
-scripts/package.sh                 builds dist/SoundGOD-<version>-macos-arm64.zip
-start.command                      double-click launcher (clears quarantine, checks ffmpeg/uv, runs the server)
+scripts/package.sh                 builds dist/SoundGOD-<version>-macos-arm64.zip and -windows-macos-intel.zip
+start.command                      Mac double-click launcher (clears quarantine, checks ffmpeg/uv, on Intel prepares the PyTorch env, runs the server)
+start.bat                          Windows double-click launcher (checks ffmpeg/uv, prepares the PyTorch env, runs the server)
+.github/workflows/check.yml        CI: check.py --full on windows-latest, macos-15-intel, ubuntu-latest
 bin/                               compiled Swift CLI + two .bundle dirs (git-ignored; ships in the zip)
 models/nemotron-re-use/            Nemotron RE-USE weights (38 MB), config, license, model card, SOURCE.txt
 models/sidon/                      Sidon weights, git-ignored, downloaded on demand
 licenses/, NOTICE.md, LICENSE      project is MIT; third-party terms in NOTICE.md
 README.md, README.he.md            user docs (English, Hebrew)
 docs/design.md                     the original short design (Hebrew)
-VERSION                            0.1.1
+VERSION                            0.2.0
 samples/, dist/                    git-ignored: listening samples and built zips
 ```
 
@@ -142,7 +145,8 @@ Without `--json` the same information goes to stderr as text, and the result is 
 | `suggest_preset()` | the rescue-versus-studio rule |
 | `extract()`, `resample()` | ffmpeg wrappers producing mono float WAV |
 | `loudnorm_two_pass()` | measure, then apply `loudnorm` with measured values and `linear=true`, then `alimiter=limit=0.84:level=0` |
-| `ensure_model()`, `clean()` | engine 1: calls the Swift CLI, parses `RTF` from its output |
+| `BACKEND`, `APPLE_SILICON` | `mlx` on Apple silicon hardware, else `torch`; `SOUNDGOD_ENGINE=torch` forces the port (for testing on a Mac). Detected with `sysctl hw.optional.arm64`, not `platform.machine()` (see pitfalls) |
+| `ensure_model()`, `clean()` | engine 1: calls the Swift CLI or `nemotron.py` (after resampling up to `out_rate` for bandwidth extension), parses `RTF` from its output |
 | `sidon_ready()` | both Sidon weight files exist in `models/sidon/` |
 | `polish_filters()` | builds the engine-3 ffmpeg chain from the parameters; returns `""` when `polish` is off |
 | `process()` | the whole pipeline for one file or window; returns timing info |
@@ -172,7 +176,7 @@ A parameter is described in **several places** that must agree. This is the main
 |---|---|---|
 | name, default, min, max, type | `PARAMS` in `enhance.py` | `NUM`/`CHOICE` whitelist in `ui/server.py`; `SLIDERS` entry in `ui/app.js` (min, max, step, formatter); the skill's mapping table |
 | preset values | `PRESETS` in `enhance.py` | read by the UI through `--describe`; the preset table in `skill/SKILL.md.tmpl` and the README |
-| time model constants | `SPEED` in `enhance.py` | `estimate()` (Python) and `calc()` (JS) implement the same formula; the UI receives `SPEED` through `--describe` |
+| time model constants | `SPEED` in `enhance.py` (`rtf` is picked from `RTF[BACKEND]`) | `estimate()` (Python) and `calc()` (JS) implement the same formula; the UI receives `SPEED` through `--describe` |
 | Hebrew explanation of each control | `SLIDERS` in `ui/app.js` (`what`, `effect`, `time`) | none |
 | what the stages are called in the progress bar | `STAGES` in `ui/app.js` | stage names emitted by `enhance.py` |
 
@@ -191,7 +195,7 @@ Parameter semantics worth knowing:
 - `gen = dur * gen_rtf + gen_fixed`.
 - `ffmpeg = fixed + dur/60 * (ffmpeg_per_min + polish_extra_per_min)`.
 
-Constants (`SPEED`), measured on an M3 Pro with 18 GB: `rtf` 0.205 / 0.42 / 0.56 for 16/32/48 kHz at `hop` 0.5; `chunk_extra` 0.38; `gen_rtf` 0.33; `gen_fixed` 3 s; `ffmpeg_per_min` 3.0; `polish_extra_per_min` 0.35; `fixed` 0.5. The scaling in `hop` (about x0.66 at 0.75, x0.48 at 1.0) was measured. On another machine the numbers will be off; the UI and skill call them estimates. To re-measure, run the engine on a clip of known length with `--json` and compare `clean_s`, `gen_s` and `seconds` in the final event; for the ffmpeg share use `--no-clean --no-gen` on a multi-minute file.
+Constants (`SPEED`), measured on an M3 Pro with 18 GB: `rtf` 0.205 / 0.42 / 0.56 for 16/32/48 kHz at `hop` 0.5 on MLX, 4.3 / 9.4 / 14.5 for the PyTorch port on the same CPU (32 kHz interpolated); `chunk_extra` 0.38; `gen_rtf` 0.33; `gen_fixed` 3 s; `ffmpeg_per_min` 3.0; `polish_extra_per_min` 0.35; `fixed` 0.5. The scaling in `hop` (about x0.66 at 0.75, x0.48 at 1.0) was measured. On another machine the numbers will be off; the UI and skill call them estimates. To re-measure, run the engine on a clip of known length with `--json` and compare `clean_s`, `gen_s` and `seconds` in the final event; for the ffmpeg share use `--no-clean --no-gen` on a multi-minute file.
 
 The UI also shows, per control, how much time the current value adds compared with its cheapest value (`CHEAPEST` and `costOf()` in `app.js`).
 
@@ -209,10 +213,10 @@ Endpoints:
 | GET `/api/ping` | heartbeat: the page calls it every 30 s; keeps `--idle-exit` away |
 | GET `/api/job/<id>` | job state: `state` (`running/done/error/cancelled`), `stage`, `pct`, `eta`, `to`, `t` (when the stage started), `result`, `error` |
 | GET `/media/<job>/<file>` | before/after audio and spectrograms of a preview, with HTTP Range support for the player |
-| POST `/api/pick` | native macOS file chooser via `osascript` (`choose file`); returns the path |
+| POST `/api/pick` | native file chooser: `osascript` (`choose file`) on macOS, tkinter in a child process elsewhere; returns the path |
 | POST `/api/analyze`, `/api/preview`, `/api/run` | start a job; body `{path, params, start?, dur?}`; return `{job}` |
 | POST `/api/cancel` | terminate a running job's process |
-| POST `/api/reveal` | `open -R path` (show in Finder) |
+| POST `/api/reveal` | show the file in Finder (`open -R`) or Explorer (`explorer /select,`) |
 
 Job lifecycle: `start_job()` builds the engine command (`uv run --script enhance.py FILE --json <flags> [--analyze | --preview S,D --outdir CACHE/<id>]`), spawns it, and a thread reads stdout lines into the job dict. Jobs live in memory (`JOBS`); preview artifacts live in `$TMPDIR/audio-enhance-ui/<job>/`.
 
@@ -295,6 +299,11 @@ Success criteria used throughout: final loudness within 1 dB of the target, peak
 
 ## 13. Pitfalls found the hard way
 
+- **Rosetta Python on Apple silicon:** `uv` may pick an x86_64 Python (it did on the development Mac), and then `platform.machine()` says `x86_64`. The backend is chosen from `sysctl hw.optional.arm64` instead. It only affects the Python scripts; the MLX tool is its own arm64 binary.
+- **Intel Macs stop at torch 2.2.2.** It needs numpy 1.x, the last numba with an Intel-Mac wheel is 0.62, and transformers >= 4.50 treat torch 2.2 as "not installed". `nemotron.py` and `sidon.py` pin these with `platform_machine == 'x86_64'` markers. Tested under Rosetta: both match the arm64 output (Sidon bit-identical, clean -52 dB).
+- **Depthwise `Conv1d` on the CPU is ~100x slower than the rest** of a Mamba layer in PyTorch (300 ms of 330). `nemotron.py` does it as four shifted multiply-adds. The selective scan is a numba kernel (`_scan`); a loop in PyTorch was far slower.
+- **Windows text encoding:** every subprocess pipe is read as UTF-8 (`encoding="utf-8", errors="replace"`) and `enhance.py` reconfigures stdout to UTF-8; otherwise Hebrew paths in the JSON break on a cp1252 console.
+
 - **Stray profile file:** the Swift CLI is built with coverage on and writes a 5 MB `default.profraw` into the working directory on every run. `run()` sets `LLVM_PROFILE_FILE=/dev/null`. Keep it.
 - **Limiter:** `alimiter` without `level=0` re-raises the signal to 0 dBFS. The limit is `0.84` (about -1.5 dBFS).
 - **SNR inflation:** frames of digital silence would make SNR huge, so frame levels are floored at -90 dB in `measure()`.
@@ -320,4 +329,6 @@ Not verified, say so honestly when it matters:
 - The skill has not been exercised end to end from a fresh Claude Code session.
 - The per-minute ffmpeg cost (3 s) is a large share once the model is fast. The pre-gain `loudnorm` and the two-pass final `loudnorm` dominate; replacing the first with a static gain would change the sound and needs a listening test.
 - The UI is Hebrew only.
+- Windows was verified only by CI (`check.yml`), never by a person: the tkinter file chooser, `start.bat` and Explorer reveal have not been clicked. The PyTorch engine's speed on a real Windows PC or Intel Mac is unmeasured (the `RTF['torch']` numbers come from an M3 Pro CPU).
+- Windows with an NVIDIA GPU could run the port on CUDA (install torch from the CUDA index); not done.
 - Possible next steps: a chunked, parallel run for very long files; real per-chunk progress from the CLI; an ONNX or Core ML route for Sidon to avoid PyTorch.
