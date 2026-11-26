@@ -1,0 +1,84 @@
+---
+name: studio-audio
+description: Clean and boost audio/video locally — remove noise and room echo, raise a very quiet speaker, give a recording a studio sound. Use when the user asks to "נקה סאונד", "הגבר סאונד", "תעשה שישמע כמו סטודיו", "תוריד הד/רעש", "שפר את ההקלטה", or to rescue a bad lecture recording. Picks the engines by the need and the time available. Runs on this Mac (Nemotron RE-USE, Sidon, ffmpeg), nothing leaves the machine.
+---
+
+# studio-audio
+
+Three engines, switched on or off per job. You choose which, from the recording and from how much time the user has.
+
+| engine | what it does | flag | cost per audio minute (M3 Pro) | risk |
+|---|---|---|---|---|
+| **clean** — Nemotron RE-USE | removes noise and room echo, does not invent speech | `--clean/--no-clean` | ~7 s (16 kHz, default), ~17 s (48 kHz) | low |
+| **gen** — Sidon | generative restoration: rebuilds the voice full-band, studio-like. CPU only | `--gen/--no-gen` | ~20 s | can invent words on weak or echoey recordings |
+| **polish** — ffmpeg | gate, warmth, presence, compression, final loudness | `--polish/--no-polish` | ~0.3 s | none |
+
+Every run also costs ~3 s per minute of ffmpeg work (extract, loudness, encode), whatever the engines. Polish-only is therefore ~3 s per minute in total.
+
+Engine: `{{ROOT}}/engine/enhance.py` (run with `uv run --script`). The original is never modified. The result is written next to it as `<name> - מוגבר ב-AI.<ext>` (video: picture copied untouched, only the sound replaced).
+
+## Steps
+
+1. **Analyze** — `uv run --script ENGINE FILE --analyze --json` → `before` (duration, lufs, snr_db, noise_floor_db, bandwidth_hz) and `suggested_preset`.
+2. **Choose the engines** with the rules below. Say what you chose and why, in one line.
+3. **Estimate** — same flags plus `--estimate --json` → `estimate_s` (`ai`, `gen`, `ffmpeg`, `total` in seconds), `sidon_ready`. Nothing is processed. Use it to decide (rules below) and to tell the user how long it will take.
+4. **Run** — `uv run --script ENGINE FILE --preset P [flags] --json`. Last JSON line: `output`, `before`, `after`, `params`, `seconds`. If `estimate_s.total` is over ~2 minutes use `run_in_background` and do not poll.
+5. **Verify** from the JSON, not from belief: `after.lufs` within 1 dB of `params.lufs`, `after.peak_db` ≤ -1, `after.duration` within 0.5 s of `before.duration`. If any fails, say so and rerun with an adjusted parameter.
+6. **Deliver** — send the output with SendUserFile (over ~200 MB: give the path), plus at most three lines: engines used and notable overrides, loudness and SNR before → after, time taken against the estimate.
+
+## Which engines
+
+Decide by the recording first, then by time.
+
+| the recording | engines | preset |
+|---|---|---|
+| the user's own healthy recording (snr ≥ 18 and lufs ≥ -35), wants "סטודיו / איכות / שישמע מקצועי" | **gen** only (the user preferred it over clean on a clear Hebrew clip; adding clean on top gave no gain, so never enable both) | `studio` |
+| weak, noisy or echoey (lecture, far mic: lufs < -35 or snr < 18) | **clean** only | `rescue` |
+| "אל תגזים", "טבעי" | **clean** at 60 % | `natural` |
+| already clean, the user only wants it louder or brighter | **polish** only: `--no-clean --no-gen` | any |
+
+Never turn **gen** on for a weak or echoey recording on your own. Resemble Enhance invented wrong words on the user's quiet Hebrew/Aramaic lecture, and Sidon was only checked on a clear Hebrew clip. If the user asks for it anyway: make a 15 s preview first (`--preview START,15 --outdir DIR`, send before.wav and after.wav), say it is unchecked on this kind of audio, and run the full file only after they approve.
+
+If the wording matters (a lecture, a talk to be subtitled) and a speech-to-text tool is available, offer a word check: transcribe the original and the result and compare; report every changed word.
+
+### Time
+
+Use `estimate_s.total` for the actual file. Rules:
+
+- The user says "מהר", "אין לי זמן", "בדיקה": take the cheapest engine that fits the recording. Clean at the default `--hop 1.0`, or polish-only for a clean recording. Name the engine you dropped and what it costs the result.
+- The user says "הכי איכותי", "אין לחץ": use the table above without trimming.
+- Estimate over ~10 minutes: say the number before running, and offer the cheaper alternative in one line (for example gen ~20 s/min → clean ~7 s/min). Do not wait for an answer unless the user asked to be consulted; run the engine you chose in the background.
+- Over ~60 minutes with gen: tell the user it is roughly half an hour per ~90 minutes of audio and that clean-only is about three times faster.
+- Sidon needs a one-time download (~1 GB of weights and ~0.7 GB of PyTorch environment, several minutes). `sidon_ready: false` in the estimate means it has not happened yet: tell the user and wait for a yes before choosing gen.
+
+## Presets
+
+| preset | engines | rate | chunk overlap | wet | loudness | notes |
+|---|---|---|---|---|---|---|
+| `rescue` | clean | 16 kHz | none | 100 | -16 | strong pre-gain; chosen when lufs < -35 or snr < 18 |
+| `studio` | gen | n/a | n/a | n/a | -16 | warmth +1.5, presence +1.5 |
+| `natural` | clean | auto | none | 60 | -18 | flat EQ, light compression |
+
+`--preset auto` (default) measures and picks. The overlap (`--hop 1.0`, no overlap between model chunks) halves the clean engine's time; it was nearly identical on a clean clip and is not yet checked on echoey lectures, so mention it when you rescue one.
+
+## Mapping words to overrides
+
+| the user says | flags |
+|---|---|
+| "יותר טבעי", "מלאכותי מדי" | `--wet 60` (clean engine; lower = more of the original room kept) |
+| "עדיין יש הד" / echo remains | `--hop 0.5` first (overlap back on, 2x slower), then `--chunk 1`; never below 0.5 |
+| "קול חם / עמוק" | `--warmth 3` |
+| "יותר ברור / חד" | `--presence 3` |
+| "יותר אחיד", "קופץ בין חלש לחזק" | `--comp 60` |
+| "נשמעים זנבות/רעש בין המילים" | `--gate 40` (above 60 it clips quiet syllables — warn) |
+| "יותר חזק" / "שקט מדי" | `--lufs -14` ; "פחות חזק" `--lufs -20` |
+| "בלי עיבוד צליל", "רק תגביר" | `--no-polish` (only loudness is matched) |
+| 16 kHz / phone source and they want "אוויר" | prefer `--gen` if the recording is healthy; otherwise `--bwe 48000` (clean engine, restores the high band, ~2.7x slower, can sound synthetic — say so) |
+
+## Honesty rules
+
+- You cannot hear the result. Report measured numbers; never say it "sounds great". If speech clarity matters, say the user should listen to the first minute.
+- Sidon is the only generative model allowed. Do not substitute another one.
+- If `bin/noise-reduction` or the Nemotron weights are missing: see `README.md` in the project (setup), do not improvise another model.
+- The time numbers come from one machine and are estimates; compare the real time with the estimate in the report.
+- macOS Apple silicon only (clean runs on MLX/Metal). ffmpeg and uv must be installed.

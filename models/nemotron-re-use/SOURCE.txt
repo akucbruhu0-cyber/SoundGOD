@@ -1,0 +1,5 @@
+NVIDIA NemotronLabs RE-USE
+Source: https://huggingface.co/nvidia/NVIDIA-NemotronLabs-RE-USE
+Revision: 31f82f2efad1095034492f236e8dac9239ba713b
+License: OpenMDW-1.1 (see LICENSE-OpenMDW-1.1.txt). Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
+Unmodified weights; redistributed under the license terms (agreement copy + notices retained).

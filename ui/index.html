@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>סטודיו סאונד</title>
+  <meta name="app" content="audio-enhance-ui">
+  <meta name="token" content="__TOKEN__">
+  <script>
+    if (location.protocol === "file:") {
+      document.addEventListener("DOMContentLoaded", () => {
+        document.body.innerHTML = '<div dir="rtl" style="font:18px/1.8 system-ui;max-width:34em;margin:12vh auto;padding:0 24px;text-align:right">' +
+          '<h1 style="font-size:28px">הדף הזה צריך את השרת המקומי</h1>' +
+          '<p>הקובץ לא נפתח ישירות בדפדפן. לחץ פעמיים על <b>start.command</b> בתיקיית הפרויקט, והדפדפן ייפתח לבד על הכתובת הנכונה.</p></div>';
+      });
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="edge edge-top" aria-hidden="true"></div>
+  <div class="edge edge-bottom" aria-hidden="true"></div>
+
+  <header class="hero grain">
+    <div class="hero-text">
+      <h1>סטודיו סאונד</h1>
+      <p>מנקים רעש והד, ואז מלטשים לצליל של סטודיו. הכול רץ על המחשב הזה, שום דבר לא יוצא ממנו.</p>
+    </div>
+    <span class="chip mono" dir="ltr">Nemotron RE-USE · local</span>
+  </header>
+
+  <main class="layout">
+    <section class="controls" aria-label="הגדרות">
+      <div class="card file-card">
+        <div class="row">
+          <h2>קובץ</h2>
+          <button class="btn btn-soft" id="pick" type="button">בחר קובץ…</button>
+        </div>
+        <p class="muted" id="file-empty">אודיו או וידאו. התוצאה נשמרת ליד הקובץ המקורי, והמקור לא משתנה.</p>
+        <div id="file-info" hidden>
+          <div class="row">
+            <strong class="fname" id="fname"></strong>
+            <span class="mono muted" id="fdur"></span>
+          </div>
+          <div class="facts" id="facts"></div>
+          <p class="desc muted" id="suggest"></p>
+          <label class="slider-row compact">
+            <span class="row"><span>מאיפה להשמיע תצוגה מקדימה</span><span class="mono" id="start-val"></span></span>
+            <input type="range" id="start" min="0" max="0" step="1" value="0">
+          </label>
+        </div>
+      </div>
+
+      <div class="presets" role="group" aria-label="פריסטים" id="presets"></div>
+
+      <div class="card">
+        <div class="row"><h2>מנועי עיבוד</h2><span class="tag">חיסכון בזמן</span></div>
+        <p class="desc muted">אפשר לוותר על מנוע שלם כדי לקצר את העבודה. התוצאה משתנה בהתאם.</p>
+        <div id="sliders-engines"></div>
+      </div>
+
+      <div class="card">
+        <div class="row"><h2>שלב 1 · ניקוי</h2><span class="tag">מודל מקומי</span></div>
+        <p class="desc muted">המודל מסיר רעש והד בלי להמציא מילים. כאן קובעים כמה ממנו נכנס לתוצאה.</p>
+        <div id="sliders-clean"></div>
+      </div>
+
+      <div class="card">
+        <div class="row"><h2>שלב 2 · ליטוש</h2><span class="tag">עיבוד קלאסי</span></div>
+        <p class="desc muted">מעצב את הצליל עצמו: גוף, בהירות, עוצמה אחידה. תוצאה צפויה ואפשר לכוון בדיוק.</p>
+        <div id="sliders-polish"></div>
+      </div>
+
+      <details class="card adv">
+        <summary>מתקדם</summary>
+        <div id="sliders-adv"></div>
+      </details>
+    </section>
+
+    <section class="stage-col" aria-label="תוצאה">
+      <div class="stage-wrap" id="wrap">
+        <div class="glow" aria-hidden="true"></div>
+        <div class="card stage" id="stage">
+          <div class="row">
+            <h2>תוצאה</h2>
+            <span class="mono muted" id="stage-status">ממתין לקובץ</span>
+          </div>
+
+          <p class="muted" id="stage-empty">בחר קובץ כדי להתחיל. אפשר לשמוע 15 שניות לפני שמריצים על כל ההקלטה.</p>
+
+          <div id="progress" hidden>
+            <div class="row"><span id="progress-label"></span><span class="mono muted" id="progress-pct"></span></div>
+            <div class="bar"><i id="bar"></i></div>
+          </div>
+
+          <p class="note" id="note" hidden></p>
+
+          <div id="ab" hidden>
+            <div class="row">
+              <div class="seg" role="group" aria-label="מה להשמיע">
+                <button type="button" data-mode="before">לפני</button>
+                <button type="button" data-mode="after" class="on">אחרי</button>
+              </div>
+              <div class="row-inline">
+                <button class="btn btn-icon" id="play" type="button" aria-label="נגן">▶</button>
+                <span class="mono" id="time" dir="ltr">0:00 / 0:00</span>
+              </div>
+            </div>
+            <p class="muted tiny">שני הקטעים באותה עוצמה, כדי שההבדל שנשמע יהיה בניקיון ולא בחוזק.</p>
+            <div class="wave"><span class="label">לפני</span><canvas id="wave-before" height="64"></canvas></div>
+            <div class="wave"><span class="label">אחרי</span><canvas id="wave-after" height="64"></canvas></div>
+            <div class="specs">
+              <figure><figcaption class="tiny muted">ספקטרוגרמה · לפני</figcaption><img id="spec-before" alt=""></figure>
+              <figure><figcaption class="tiny muted">ספקטרוגרמה · אחרי</figcaption><img id="spec-after" alt=""></figure>
+            </div>
+          </div>
+
+          <table class="metrics" id="metrics" hidden>
+            <thead><tr><th></th><th id="m-before-h">מקור</th><th id="m-after-h">אחרי</th></tr></thead>
+            <tbody></tbody>
+          </table>
+
+          <div id="saved" hidden>
+            <p class="muted tiny">נשמר ליד המקור:</p>
+            <p class="path mono" dir="ltr" id="saved-path"></p>
+            <button class="btn btn-soft" id="reveal" type="button">הצג ב-Finder</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="actionbar glass">
+    <div class="actions">
+      <button class="btn btn-primary" id="apply" type="button" disabled>
+        <svg class="spark" viewBox="0 0 40 40" width="20" height="20" aria-hidden="true"><use href="#spark"/></svg>
+        <span>החל ושמור ליד המקור</span>
+      </button>
+      <button class="btn btn-soft" id="preview" type="button" disabled>תצוגה מקדימה · 15 שניות</button>
+      <button class="btn btn-ghost" id="cancel" type="button" hidden>עצור</button>
+    </div>
+    <span class="muted" id="bar-status"></span>
+  </div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="spark" viewBox="0 0 40 40">
+        <path fill="var(--spark)" d="M16 4l2.6 9.4L28 16l-9.4 2.6L16 28l-2.6-9.4L4 16l9.4-2.6z"/>
+        <path fill="var(--spark)" d="M31 20l1.3 4.7L37 26l-4.7 1.3L31 32l-1.3-4.7L25 26l4.7-1.3z"/>
+        <path fill="var(--spark)" d="M30 4l.8 2.7 2.7.8-2.7.8L30 11l-.8-2.7-2.7-.8 2.7-.8z"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

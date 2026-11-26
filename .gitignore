@@ -1,0 +1,12 @@
+dist/
+samples/
+.test/
+__pycache__/
+*.profraw
+.DS_Store
+
+# built tool: ships in the Release zip, or build it with scripts/build-cli.sh
+bin/
+
+# Sidon weights (about 1 GB, MIT): downloaded on first use by engine/sidon.py
+models/sidon/
