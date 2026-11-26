@@ -6,7 +6,7 @@
 
   ./ui/server.py [--port 8787] [--no-open]
 
-It can pick files on this Mac and write next to them, so it is guarded three ways:
+It can pick files on this computer and write next to them, so it is guarded three ways:
 loopback bind, Host-header check (DNS rebinding), and a per-run token on every API/media request.
 """
 from __future__ import annotations
@@ -39,6 +39,12 @@ UV = shutil.which("uv") or "/opt/homebrew/bin/uv"
 # whitelist: key -> validator. Nothing else from the browser reaches the engine's argv.
 NUM = {"wet": (0, 100), "chunk": (0.5, 5), "hop": (0.5, 1), "lufs": (-23, -12), "presence": (-6, 6), "warmth": (-6, 6), "comp": (0, 100), "gate": (0, 100)}
 CHOICE = {"bwe": {"off", "32000", "48000"}, "rate": {"auto", "16000", "48000"}, "preset": {"auto", "rescue", "studio", "natural"}}
+
+TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}  # the engine prints UTF-8 JSON; Windows would decode it as cp1252
+PROMPT = "בחר הקלטה או סרטון"
+# Windows/Linux file chooser: tkinter in a child process (a dialog cannot run on the server's worker thread)
+TK_PICK = ("import tkinter as t, tkinter.filedialog as f, sys; r = t.Tk(); r.withdraw(); r.attributes('-topmost', True); "
+           "sys.stdout.reconfigure(encoding='utf-8'); print(f.askopenfilename(title=sys.argv[1]) or '')")
 
 LAST = [time.time()]  # last request; the optional idle shutdown (--idle-exit) watches this
 JOBS: dict[str, dict] = {}
@@ -87,7 +93,7 @@ def start_job(kind: str, body: dict) -> str:
 
     def work() -> None:
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **TEXT)
             job["proc"] = proc
             for line in proc.stdout:  # type: ignore[union-attr]
                 try:
@@ -111,6 +117,32 @@ def start_job(kind: str, body: dict) -> str:
 
     threading.Thread(target=work, daemon=True).start()
     return jid
+
+
+def pick_file() -> str | None:
+    if sys.platform == "darwin":
+        cmd = ["osascript", "-e", f'POSIX path of (choose file with prompt "{PROMPT}")']
+    else:
+        cmd = [sys.executable, "-c", TK_PICK, PROMPT]
+    p = subprocess.run(cmd, capture_output=True, timeout=600, **TEXT)
+    return str(Path(p.stdout.strip())) if p.stdout.strip() else None
+
+
+def reveal(path: Path) -> None:
+    if sys.platform == "darwin":
+        subprocess.run(["open", "-R", str(path)])
+    elif sys.platform == "win32":
+        subprocess.run(["explorer", f"/select,{path}"])  # explorer returns 1 even on success
+    else:
+        subprocess.run(["xdg-open", str(path.parent)])
+
+
+def stop(proc: subprocess.Popen) -> None:
+    """End a job and its children. On Windows terminate() only ends `uv`, and the engine it started keeps running."""
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        proc.terminate()  # uv forwards the signal to the engine
 
 
 def public(job: dict) -> dict:
@@ -202,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             if CACHE.resolve() in f.parents and f.is_file():
                 return self.send_file(f)
         if u.path == "/api/describe":
-            p = subprocess.run([UV, "run", "--script", str(ENGINE), "--describe"], capture_output=True, text=True)
+            p = subprocess.run([UV, "run", "--script", str(ENGINE), "--describe"], capture_output=True, **TEXT)
             return self.send_json(json.loads(p.stdout))
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -214,19 +246,17 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         try:
             if u.path == "/api/pick":
-                script = 'POSIX path of (choose file with prompt "בחר הקלטה או סרטון")'
-                p = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=600)
-                return self.send_json({"path": p.stdout.strip() or None})
+                return self.send_json({"path": pick_file()})
             if u.path in ("/api/analyze", "/api/preview", "/api/run"):
                 return self.send_json({"job": start_job(u.path.rsplit("/", 1)[1], body)})
             if u.path == "/api/cancel":
                 job = JOBS.get(body.get("job", ""))
                 if job and job.get("proc") and job["state"] == "running":
                     job["state"] = "cancelled"
-                    job["proc"].terminate()
+                    stop(job["proc"])
                 return self.send_json({"ok": True})
             if u.path == "/api/reveal":
-                subprocess.run(["open", "-R", str(valid_media(body["path"]))])
+                reveal(valid_media(body["path"]))
                 return self.send_json({"ok": True})
         except (ValueError, KeyError) as e:
             return self.send_json({"error": str(e)}, 400)

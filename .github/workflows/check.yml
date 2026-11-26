@@ -1,0 +1,31 @@
+# Smoke test on the platforms the PyTorch clean engine serves: a preview, a full run on a Hebrew-named file,
+# and a web-server round trip (engine/check.py --full). Apple silicon uses the MLX tool, which is not in git.
+name: check
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15-intel, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - name: ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: smoke test
+        env:
+          PYTHONUTF8: "0"  # keep the platform's default encoding, so the test sees what users see
+        run: uv run --script engine/check.py --full

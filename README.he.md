@@ -5,7 +5,8 @@
 ניקוי רעש והד והגברה של הקלטות, מקומי לגמרי: הרצאה חלשה ורחוקה, או סרטון שלך שרוצים שיישמע כמו מיקרופון איכותי. שום דבר לא עולה לרשת. English: `README.md`.
 
 ```
-שלב 1  ניקוי   Nemotron RE-USE (NVIDIA, על MLX/Metal)   מסיר רעש והד, לא ממציא מילים
+שלב 1  ניקוי   Nemotron RE-USE (NVIDIA)                  מסיר רעש והד, לא ממציא מילים
+               (במק Apple silicon על ה-GPU, בווינדוס ובמק אינטל על המעבד)
 שלב 2  ליטוש   ffmpeg                                    שער, חום, נוכחות, דחיסה, עוצמה סופית
 ```
 
@@ -14,22 +15,35 @@
 **המודלים כלולים** בתיקייה `models/nemotron-re-use/` (38MB). שום דבר לא יורד בזמן ריצה.
 
 ## דרישות
-Mac עם Apple silicon, macOS 14+, ו-`brew install ffmpeg uv`.
+| | מק Apple silicon | מק אינטל | ווינדוס 10/11 |
+|---|---|---|---|
+| קובץ להורדה | `SoundGOD-<גרסה>-macos-arm64.zip` | `SoundGOD-<גרסה>-windows-macos-intel.zip` | `SoundGOD-<גרסה>-windows-macos-intel.zip` |
+| להתקין פעם אחת | `brew install ffmpeg uv` | `brew install ffmpeg uv` | `winget install Gyan.FFmpeg` ואז `winget install astral-sh.uv` |
+| הפעלה | `start.command` | `start.command` | `start.bat` |
+| מנוע הניקוי רץ על | MLX, כרטיס גרפי (מהיר) | PyTorch, מעבד | PyTorch, מעבד |
 
-## התחלה מהירה (קובץ zip מ-Releases)
-1. מורידים את `SoundGOD-<גרסה>-macos-arm64.zip` ומפרקים.
+בכל המערכות זה אותו מודל של NVIDIA עם אותם משקלים. NVIDIA מפרסמת אותו רק ללינוקס עם כרטיס NVIDIA, ולכן בווינדוס ובמק אינטל הוא רץ דרך `engine/nemotron.py`: תרגום של קוד המקור של NVIDIA ל-PyTorch רגיל (התוצאה זהה לכלי של המק בהפרש של כ-‎-55dB). זה איטי בהרבה: כ-2 דקות עיבוד לכל דקת הקלטה ב-16kHz (`rescue`) וכ-7 דקות ב-48kHz, כפי שנמדד על המעבד של M3 Pro. במחשב הבדיקה של GitHub (ווינדוס, 4 ליבות) זה יצא כ-7 דקות לכל דקת הקלטה ב-16kHz. הממשק מציג הערכת זמן לפני ההרצה. בפעם הראשונה בווינדוס או במק אינטל יורד PyTorch (כ-1GB, פעם אחת).
+
+## התחלה מהירה בווינדוס
+1. פעם אחת, בטרמינל (PowerShell): `winget install Gyan.FFmpeg` ואז `winget install astral-sh.uv`, ואז סוגרים את הטרמינל.
+2. מורידים את `SoundGOD-<גרסה>-windows-macos-intel.zip` מ-Releases ומחלצים (קליק ימני ← חלץ הכל).
+3. לחיצה כפולה על `start.bat`. בפעם הראשונה הוא מכין את מנוע ה-AI כמה דקות, ואז נפתח הדפדפן עם הממשק.
+   אם SmartScreen מזהיר: מידע נוסף ← הפעל בכל זאת.
+
+## התחלה מהירה במק (קובץ zip מ-Releases)
+1. מורידים את קובץ ה-zip שמתאים למק שלך (לפי הטבלה) ומפרקים.
 2. פעם אחת בטרמינל: `xattr -dr com.apple.quarantine /נתיב/אל/SoundGOD-*` (macOS חוסם כלים שהורדו).
 3. לחיצה כפולה על `start.command`. נפתח דפדפן עם הממשק.
    לאייקון של אפליקציה אמיתית (Dock, Spotlight, Launchpad): `./scripts/make-app.sh` בונה את `סטודיו סאונד.app` ב-`~/Applications`. היא מרימה את השרת המקומי כשפותחים אותה, וסוגרת אותו אחרי 15 דקות בלי שימוש. אם מזיזים את תיקיית הפרויקט, מריצים את הסקריפט שוב.
 4. לסקיל של Claude Code: `./scripts/install-skill.sh`
 
 ## מ-git clone
-בריפו יש קוד ומשקלים, אבל לא הכלי המקומפל (`bin/`):
+בריפו יש קוד ומשקלים, אבל לא הכלי המקומפל ל-Apple silicon (`bin/`). בווינדוס ובמק אינטל אין מה לבנות: מפעילים את `start.bat` או `start.command`. ב-Apple silicon:
 ```
 ./scripts/build-cli.sh     # בונה את כלי ה-MLX בגרסה נעוצה (צריך Xcode, וירד Metal Toolchain של כ-840MB בפעם הראשונה)
 ./start.command
 ```
-`./scripts/package.sh` בונה את קובץ ה-zip לשחרור.
+`./scripts/package.sh` בונה את שני קובצי ה-zip לשחרור. בכל push רצה בדיקה אוטומטית על ווינדוס, מק אינטל ולינוקס (`.github/workflows/check.yml`).
 
 ## שלושה מנועים
 - **ניקוי (Nemotron RE-USE):** מסיר רעש והד, כלול בפרויקט.
@@ -54,4 +68,4 @@ Mac עם Apple silicon, macOS 14+, ו-`brew install ffmpeg uv`.
 - תמיד מקשיבים לתוצאה. המדדים הם רמזים בלבד.
 
 ## רישיונות
-קוד הפרויקט: MIT. המודל של NVIDIA: OpenMDW-1.1 (הרישיון מצורף ליד המשקלים). כלי ה-MLX: MIT. פרטים ב-`NOTICE.md`.
+קוד הפרויקט: MIT. המודל של NVIDIA, וקוד המקור שממנו תורגם `engine/nemotron.py`: OpenMDW-1.1 (הרישיון מצורף ליד המשקלים). כלי ה-MLX: MIT. פרטים ב-`NOTICE.md`.

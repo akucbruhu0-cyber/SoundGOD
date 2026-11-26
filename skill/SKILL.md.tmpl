@@ -79,6 +79,6 @@ Use `estimate_s.total` for the actual file. Rules:
 
 - You cannot hear the result. Report measured numbers; never say it "sounds great". If speech clarity matters, say the user should listen to the first minute.
 - Sidon is the only generative model allowed. Do not substitute another one.
-- If `bin/noise-reduction` or the Nemotron weights are missing: see `README.md` in the project (setup), do not improvise another model.
+- On Apple silicon, if `bin/noise-reduction` or the Nemotron weights are missing: see `README.md` in the project (setup), do not improvise another model.
 - The time numbers come from one machine and are estimates; compare the real time with the estimate in the report.
-- macOS Apple silicon only (clean runs on MLX/Metal). ffmpeg and uv must be installed.
+- Apple silicon runs clean on MLX (fast). Windows, Intel Macs and Linux run the same model through `engine/nemotron.py` on the CPU, roughly 10-20x slower: always give the `--estimate` before a long clean run there. ffmpeg and uv must be installed.
