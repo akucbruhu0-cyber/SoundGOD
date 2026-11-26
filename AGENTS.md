@@ -1,6 +1,6 @@
 # AGENTS.md: architecture and change guide for SoundGOD
 
-Written for an AI coding agent (or a new human) who has never seen this project and has to modify it. Read this first, then the code. (The project's internal name, still used for the folder, cache directories and the page marker, is `audio-enhance`.) It describes the state of the project at version 0.1.0.
+Written for an AI coding agent (or a new human) who has never seen this project and has to modify it. Read this first, then the code. (The project's internal name, still used for the folder, cache directories and the page marker, is `audio-enhance`.) It describes the state of the project at version 0.1.1.
 
 ## 1. What it is
 
@@ -81,7 +81,8 @@ ui/static/style.css     199 lines  design tokens and styles
 skill/SKILL.md.tmpl                skill source; {{ROOT}} is replaced with the project path at install time
 scripts/install-skill.sh           renders the template to ~/.claude/skills/studio-audio/SKILL.md
 scripts/make-app.sh                builds "סטודיו סאונד.app" (default: ~/Applications)
-scripts/make-icon.py               draws the app icon (pillow, via uv) into an .iconset
+scripts/make-icon.py               crops assets/logo.jpg into the rounded app-icon .iconset (pillow, via uv)
+assets/logo.jpg                    the SoundGOD logo, 2000x2000: source of the app icon, shown in the READMEs
 scripts/build-cli.sh               clones and builds the MLX tool at a pinned commit into bin/
 scripts/package.sh                 builds dist/SoundGOD-<version>-macos-arm64.zip
 start.command                      double-click launcher (clears quarantine, checks ffmpeg/uv, runs the server)
@@ -91,11 +92,11 @@ models/sidon/                      Sidon weights, git-ignored, downloaded on dem
 licenses/, NOTICE.md, LICENSE      project is MIT; third-party terms in NOTICE.md
 README.md, README.he.md            user docs (English, Hebrew)
 docs/design.md                     the original short design (Hebrew)
-VERSION                            0.1.0
+VERSION                            0.1.1
 samples/, dist/                    git-ignored: listening samples and built zips
 ```
 
-The project is **not published yet** and is not a git repository. `.gitignore` already excludes `bin/`, `dist/`, `samples/`, `.test/`, `models/sidon/`, `__pycache__/`, `*.profraw`.
+The project is published at https://github.com/akucbruhu0-cyber/SoundGOD ; compiled files and large models are not in git. `.gitignore` already excludes `bin/`, `dist/`, `samples/`, `.test/`, `models/sidon/`, `__pycache__/`, `*.profraw`.
 
 All Python entry points are **uv inline-script files** (`#!/usr/bin/env -S uv run --script` plus a `# /// script` header). There is no `pyproject.toml`, no virtualenv to create, no package to install. Run them with `uv run --script path.py`. Each script gets its own cached environment, so `enhance.py` (numpy, soundfile) and `sidon.py` (torch, torchaudio, transformers, ...) never share one. That separation is deliberate: the heavy PyTorch stack is only pulled in when gen is used.
 
@@ -242,14 +243,14 @@ Flow:
 Design rules (the UI follows a brand book; keep to it):
 - Three visual states: still, AI working, live. The AI glow (`.glow`, class `working` on `#wrap`) appears **only while a job runs**. Red is reserved for "live" and is not used here.
 - Palette tokens in `:root` of `style.css`: paper `#F5FAF6`, mint `#CDEBD5`, ink `#0F2418`, forest `#1E6A2E`, and the spark colour `#FFB574` used only for the AI icon. Dark mode is handled with `prefers-color-scheme`.
-- Radii 12 / 22 / 36 px, pill-shaped buttons, justified paragraphs, no centred layouts, **no logo anywhere**. Motion tokens: enter 320 ms, breathing 4.2 s; `prefers-reduced-motion` is respected.
+- Radii 12 / 22 / 36 px, pill-shaped buttons, justified paragraphs, no centred layouts, **no logo inside the web UI** (the logo is only the app icon and the README header). Motion tokens: enter 320 ms, breathing 4.2 s; `prefers-reduced-motion` is respected.
 - RTL: `<html lang="he" dir="rtl">`; use logical CSS properties. Waveform canvases force `direction: ltr` because audio time runs left to right. Numbers and file paths are isolated LTR.
 - A global rule `[hidden]{display:none!important}` exists because components that set `display:flex` otherwise override the `hidden` attribute.
 
 ## 9. Launchers, packaging, skill
 
 - `start.command`: for a double-click. Clears macOS quarantine on the folder (needed for a downloaded zip), checks `ffmpeg` and `uv`, `exec`s the server.
-- `scripts/make-app.sh [dest]`: creates `סטודיו סאונד.app` with `Contents/MacOS/launch` (zsh), `Info.plist`, an icon made by `make-icon.py`, and `Contents/Resources/root` holding this project's absolute path (the app finds the project through that file, else through its own parent folder). The launcher reuses an already running server (it recognises it by `<meta name="app" content="audio-enhance-ui">` on ports 8787 to 8806) or starts one with `--idle-exit 15`, waits up to two minutes (first run may build the uv environment), then `open`s the URL. If the project folder moves, run the script again. Ad-hoc signed.
+- `scripts/make-app.sh [dest]`: creates `סטודיו סאונד.app` with `Contents/MacOS/launch` (zsh), `Info.plist`, an icon made by `make-icon.py` from `assets/logo.jpg` (the crop is the `CENTER`/`SIDE` constants; adjust them if the artwork changes), and `Contents/Resources/root` holding this project's absolute path (the app finds the project through that file, else through its own parent folder). The launcher reuses an already running server (it recognises it by `<meta name="app" content="audio-enhance-ui">` on ports 8787 to 8806) or starts one with `--idle-exit 15`, waits up to two minutes (first run may build the uv environment), then `open`s the URL. If the project folder moves, run the script again. Ad-hoc signed.
 - `scripts/package.sh`: rsyncs the project (excluding `dist/`, `samples/`, `docs/`, `models/sidon/`, caches) and zips with `ditto -c -k --keepParent --norsrc --noextattr --noacl`. Those ditto flags matter: without them the zip contains `._` AppleDouble files. Requires `bin/noise-reduction` and the Nemotron weights to exist.
 - `scripts/build-cli.sh`: clones the Swift tool at a pinned commit, installs the Xcode Metal Toolchain component if needed (about 840 MB), runs `make build`, copies the binary and its two `.bundle` directories into `bin/`. **Never run end to end from scratch yet** (the binary in `bin/` was built by hand with the same commit).
 - `scripts/install-skill.sh`: renders `skill/SKILL.md.tmpl` with `{{ROOT}}` replaced by the project path. Re-run it after editing the template. The skill drives the engine CLI; if you add a flag or change behaviour the skill relies on (the JSON result keys, `--estimate`, engine flags, preset meanings), update the template too.

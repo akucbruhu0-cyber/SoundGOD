@@ -1,5 +1,7 @@
 # SoundGOD
 
+<p align="center"><img src="assets/logo.jpg" alt="SoundGOD" width="180"></p>
+
 Local speech cleanup for very bad recordings (a far-away lecturer, echoey rooms, noise) and a "studio microphone" polish for your own videos. Everything runs on your Mac. Nothing is uploaded.
 
 `README.he.md` has a Hebrew version. The web UI itself is in Hebrew (RTL).
