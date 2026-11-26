@@ -33,7 +33,7 @@ Nemotron RE-USE is **included** (`models/nemotron-re-use/`, 38 MB). The optional
 | start | `start.command` | `start.command` | `start.bat` |
 | clean engine runs on | MLX, on the GPU (fast) | PyTorch, on the CPU | PyTorch, on the CPU |
 
-The clean engine is the same NVIDIA model with the same weights everywhere. NVIDIA publishes it for Linux with an NVIDIA GPU only, so on Windows and Intel Macs it runs through `engine/nemotron.py`, a plain-PyTorch port of NVIDIA's reference code (output matches the Mac tool to about -55 dB). It is much slower: measured on an M3 Pro's CPU, about 2 minutes of processing per audio minute at 16 kHz (`rescue`) and about 7 at 48 kHz; a Windows PC will be in that range, an older laptop slower. The UI shows the estimate before you run. The first run on Windows or an Intel Mac downloads PyTorch (about 1 GB, once).
+The clean engine is the same NVIDIA model with the same weights everywhere. NVIDIA publishes it for Linux with an NVIDIA GPU only, so on Windows and Intel Macs it runs through `engine/nemotron.py`, a plain-PyTorch port of NVIDIA's reference code (output matches the Mac tool to about -55 dB). It is much slower: measured on an M3 Pro's CPU, about 2 minutes of processing per audio minute at 16 kHz (`rescue`) and about 7 at 48 kHz; on GitHub's 4-core Windows test machine it was about 7 minutes per audio minute at 16 kHz. The UI shows the estimate before you run. The first run on Windows or an Intel Mac downloads PyTorch (about 1 GB, once).
 
 ## Quick start on Windows
 

@@ -137,6 +137,14 @@ def reveal(path: Path) -> None:
         subprocess.run(["xdg-open", str(path.parent)])
 
 
+def stop(proc: subprocess.Popen) -> None:
+    """End a job and its children. On Windows terminate() only ends `uv`, and the engine it started keeps running."""
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        proc.terminate()  # uv forwards the signal to the engine
+
+
 def public(job: dict) -> dict:
     return {k: v for k, v in job.items() if k != "proc"}
 
@@ -245,7 +253,7 @@ class Handler(BaseHTTPRequestHandler):
                 job = JOBS.get(body.get("job", ""))
                 if job and job.get("proc") and job["state"] == "running":
                     job["state"] = "cancelled"
-                    job["proc"].terminate()
+                    stop(job["proc"])
                 return self.send_json({"ok": True})
             if u.path == "/api/reveal":
                 reveal(valid_media(body["path"]))

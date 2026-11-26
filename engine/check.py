@@ -55,8 +55,8 @@ def server_round_trip(src: Path) -> None:
             time.sleep(1)
         assert j["state"] == "done", j
         print("server analyze ok:", j["result"]["suggested_preset"])
-    finally:
-        srv.terminate()
+    finally:  # the whole tree: on Windows terminate() would leave the server running under uv
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(srv.pid)], capture_output=True) if sys.platform == "win32" else srv.terminate()
 
 
 with tempfile.TemporaryDirectory() as tmp:

@@ -329,6 +329,6 @@ Not verified, say so honestly when it matters:
 - The skill has not been exercised end to end from a fresh Claude Code session.
 - The per-minute ffmpeg cost (3 s) is a large share once the model is fast. The pre-gain `loudnorm` and the two-pass final `loudnorm` dominate; replacing the first with a static gain would change the sound and needs a listening test.
 - The UI is Hebrew only.
-- Windows was verified only by CI (`check.yml`), never by a person: the tkinter file chooser, `start.bat` and Explorer reveal have not been clicked. The PyTorch engine's speed on a real Windows PC or Intel Mac is unmeasured (the `RTF['torch']` numbers come from an M3 Pro CPU).
+- Windows was verified only by CI (`check.yml`), never by a person: the tkinter file chooser, `start.bat` and Explorer reveal have not been clicked. The PyTorch engine's speed on a real Windows PC or Intel Mac is unmeasured: the `RTF['torch']` numbers come from an M3 Pro CPU; GitHub's 4-core Windows runner measured RTF 7.1 at 16 kHz, hop 1.0 (3.3x slower).
 - Windows with an NVIDIA GPU could run the port on CUDA (install torch from the CUDA index); not done.
 - Possible next steps: a chunked, parallel run for very long files; real per-chunk progress from the CLI; an ONNX or Core ML route for Sidon to avoid PyTorch.
